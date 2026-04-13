@@ -14,7 +14,6 @@ import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
 import HomeScreen           from '../screens/HomeScreen';
 import ExploreScreen        from '../screens/ExploreScreen';
 import EventsScreen         from '../screens/EventsScreen';
-import MapScreen            from '../screens/MapScreen';
 import AddScreen            from '../screens/AddScreen';
 import ProfileScreen        from '../screens/ProfileScreen';
 import DetailScreen         from '../screens/DetailScreen';
@@ -56,6 +55,9 @@ const HomeStack = () => (
   <Stack.Navigator>
     <Stack.Screen name="ExploreHome" component={HomeScreen}
       options={{ headerShown: false }} />
+    <Stack.Screen name="Detail" component={DetailScreen}
+      options={{ title: 'Chi tiết', headerStyle: { backgroundColor: TEAL },
+        headerTitleStyle: { color: '#fff', fontWeight: '800' }, headerTintColor: '#fff' }} />
   </Stack.Navigator>
 );
 
@@ -74,15 +76,6 @@ const EventsStack = () => (
       options={{ title: '🎉 Sự kiện', headerStyle: { backgroundColor: TEAL }, headerTitleStyle: { color: '#fff', fontWeight: '800' }, headerTintColor: '#fff' }} />
     <Stack.Screen name="Detail" component={DetailScreen}
       options={{ title: 'Chi tiết sự kiện', headerStyle: { backgroundColor: TEAL }, headerTitleStyle: { color: '#fff', fontWeight: '800' }, headerTintColor: '#fff' }} />
-  </Stack.Navigator>
-);
-
-const MapStack = () => (
-  <Stack.Navigator>
-    <Stack.Screen name="MapMain" component={MapScreen}
-      options={{ title: '🗺️ Bản đồ', headerStyle: { backgroundColor: TEAL }, headerTitleStyle: { color: '#fff', fontWeight: '800' }, headerTintColor: '#fff' }} />
-    <Stack.Screen name="Detail" component={DetailScreen}
-      options={{ title: 'Chi tiết', headerStyle: { backgroundColor: TEAL }, headerTitleStyle: { color: '#fff', fontWeight: '800' }, headerTintColor: '#fff' }} />
   </Stack.Navigator>
 );
 
@@ -113,7 +106,7 @@ const MainTabs = () => (
       name="Home"
       component={HomeStack}
       options={{
-        tabBarIcon: ({ focused }) => <TabIcon emoji="🏠" label="Trang chủ" focused={focused} />,
+        tabBarIcon: ({ focused }) => <TabIcon emoji="🗺️" label="Trang chủ" focused={focused} />,
       }}
     />
     <Tab.Screen
@@ -135,13 +128,6 @@ const MainTabs = () => (
       component={EventsStack}
       options={{
         tabBarIcon: ({ focused }) => <TabIcon emoji="🎉" label="Sự kiện" focused={focused} />,
-      }}
-    />
-    <Tab.Screen
-      name="Map"
-      component={MapStack}
-      options={{
-        tabBarIcon: ({ focused }) => <TabIcon emoji="🗺️" label="Bản đồ" focused={focused} />,
       }}
     />
     <Tab.Screen
