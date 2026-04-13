@@ -9,9 +9,6 @@ import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { auth } from '../firebaseConfig';
 import { useAuth } from '../context/AuthContext';
 
-// ────────────────────────────────────────────────
-// Helpers
-// ────────────────────────────────────────────────
 const validateEmail = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 
 export default function LoginScreen({ navigation }) {
@@ -26,43 +23,32 @@ export default function LoginScreen({ navigation }) {
   const emailValid = email.length === 0 || validateEmail(email);
   const canSubmit  = validateEmail(email) && password.length >= 6;
 
-  // ────────────────────────────────────────────────
-  // Đăng nhập Email/Password
-  // ────────────────────────────────────────────────
+  // ── Đăng nhập Email/Password ──────────────────────────────────
   const handleEmailLogin = useCallback(async () => {
     if (!canSubmit) return;
     setLoadingEmail(true);
     const result = await loginWithEmail(email.trim(), password);
     setLoadingEmail(false);
 
-    if (result.success) {
-      navigation.replace('Home');
-    } else {
+    if (!result.success) {
       Alert.alert('Đăng nhập thất bại', result.message);
     }
-  }, [email, password, canSubmit, loginWithEmail, navigation]);
+    // AppNavigator tự chuyển sang MainTabs khi user thay đổi
+  }, [email, password, canSubmit, loginWithEmail]);
 
-  // ────────────────────────────────────────────────
-  // Đăng nhập Google (Expo Web → dùng popup)
-  // ────────────────────────────────────────────────
+  // ── Đăng nhập Google ──────────────────────────────────────────
   const handleGoogleLogin = useCallback(async () => {
     setLoadingGoogle(true);
     try {
-      const provider = new GoogleAuthProvider();
-      const result   = await signInWithPopup(auth, provider);
+      const provider   = new GoogleAuthProvider();
+      const result     = await signInWithPopup(auth, provider);
       const credential = GoogleAuthProvider.credentialFromResult(result);
-
       const authResult = await loginWithGoogle(credential.idToken);
 
-      if (authResult.success) {
-        if (authResult.isNewUser) {
-          navigation.replace('Preferences');
-        } else {
-          navigation.replace('Home');
-        }
-      } else {
+      if (!authResult.success) {
         Alert.alert('Đăng nhập Google thất bại', authResult.message);
       }
+      // AppNavigator tự điều hướng dựa vào user state
     } catch (err) {
       if (err.code !== 'auth/popup-closed-by-user') {
         Alert.alert('Lỗi', err.message);
@@ -70,11 +56,8 @@ export default function LoginScreen({ navigation }) {
     } finally {
       setLoadingGoogle(false);
     }
-  }, [loginWithGoogle, navigation]);
+  }, [loginWithGoogle]);
 
-  // ────────────────────────────────────────────────
-  // Render
-  // ────────────────────────────────────────────────
   return (
     <KeyboardAvoidingView
       style={styles.flex}
@@ -84,7 +67,6 @@ export default function LoginScreen({ navigation }) {
         contentContainerStyle={styles.container}
         keyboardShouldPersistTaps="handled"
       >
-
         {/* Logo */}
         <View style={styles.logoArea}>
           <View style={styles.logoCircle}>
@@ -196,9 +178,6 @@ export default function LoginScreen({ navigation }) {
   );
 }
 
-// ────────────────────────────────────────────────
-// Styles
-// ────────────────────────────────────────────────
 const TEAL  = '#0D9488';
 const TEAL2 = '#0F766E';
 const ERROR = '#EF4444';
@@ -207,7 +186,6 @@ const styles = StyleSheet.create({
   flex:      { flex: 1, backgroundColor: '#F0FDF9' },
   container: { flexGrow: 1, paddingHorizontal: 24, paddingBottom: 32 },
 
-  // Logo
   logoArea: { alignItems: 'center', marginTop: 52, marginBottom: 28 },
   logoCircle: {
     width: 80, height: 80, borderRadius: 40,
@@ -219,14 +197,12 @@ const styles = StyleSheet.create({
   appName:   { fontSize: 28, fontWeight: '800', color: TEAL2, marginTop: 12, letterSpacing: 0.5 },
   tagline:   { fontSize: 13, color: '#6B7280', marginTop: 4 },
 
-  // Card
   card: {
     backgroundColor: '#FFFFFF', borderRadius: 20, padding: 24,
     shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 16, elevation: 4,
   },
   title: { fontSize: 22, fontWeight: '700', color: '#111827', marginBottom: 20 },
 
-  // Fields
   fieldGroup: { marginBottom: 14 },
   label:      { fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 6 },
   input: {
@@ -246,11 +222,9 @@ const styles = StyleSheet.create({
   eyeBtn:  { position: 'absolute', right: 12 },
   eyeIcon: { fontSize: 18 },
 
-  // Forgot
   forgotBtn:  { alignSelf: 'flex-end', marginBottom: 18 },
   forgotText: { fontSize: 13, color: TEAL, fontWeight: '600' },
 
-  // Primary button
   btnPrimary: {
     backgroundColor: TEAL, borderRadius: 14,
     paddingVertical: 14, alignItems: 'center',
@@ -259,12 +233,10 @@ const styles = StyleSheet.create({
   btnDisabled:    { backgroundColor: '#A7F3D0' },
   btnPrimaryText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 
-  // Divider
   dividerRow:  { flexDirection: 'row', alignItems: 'center', marginVertical: 18 },
   dividerLine: { flex: 1, height: 1, backgroundColor: '#E5E7EB' },
   dividerText: { marginHorizontal: 12, color: '#9CA3AF', fontSize: 13 },
 
-  // Google button
   btnGoogle: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     borderWidth: 1.5, borderColor: '#E5E7EB', borderRadius: 14,
@@ -273,7 +245,6 @@ const styles = StyleSheet.create({
   googleLetter:  { fontSize: 18, fontWeight: '800', color: '#4285F4', marginRight: 10 },
   btnGoogleText: { fontSize: 15, fontWeight: '600', color: '#374151' },
 
-  // Register
   registerRow:  { flexDirection: 'row', justifyContent: 'center', marginTop: 24 },
   registerHint: { color: '#6B7280', fontSize: 14 },
   registerLink: { color: TEAL, fontWeight: '700', fontSize: 14 },

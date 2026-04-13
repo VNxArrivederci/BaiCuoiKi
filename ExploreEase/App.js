@@ -1,3 +1,4 @@
+// App.js
 import { AuthProvider } from './context/AuthContext';
 import AppNavigator from './navigation/AppNavigator';
 

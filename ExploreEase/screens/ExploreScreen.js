@@ -1,5 +1,5 @@
 // screens/ExploreScreen.js
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
   ActivityIndicator, RefreshControl, TextInput,
@@ -70,17 +70,19 @@ function PlaceCard({ item, onPress }) {
 
 export default function ExploreScreen({ navigation }) {
   const { user } = useAuth();
-  const userInterests   = user?.profile?.interests || [];
+
+  // ── useMemo để ổn định reference, tránh re-render vô tận ──────
+  const userInterests   = useMemo(() => user?.profile?.interests || [], [user?.profile?.interests]);
   const userTravelStyle = user?.profile?.travelStyle || '';
 
-  const [places, setPlaces]       = useState([]);
-  const [loading, setLoading]     = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const [places, setPlaces]           = useState([]);
+  const [loading, setLoading]         = useState(true);
+  const [refreshing, setRefreshing]   = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [hasMore, setHasMore]     = useState(true);
-  const [category, setCategory]   = useState('');
-  const [sortBy, setSortBy]       = useState('createdAt');
-  const [search, setSearch]       = useState('');
+  const [hasMore, setHasMore]         = useState(true);
+  const [category, setCategory]       = useState('');
+  const [sortBy, setSortBy]           = useState('createdAt');
+  const [search, setSearch]           = useState('');
 
   const lastDocRef = useRef(null);
 

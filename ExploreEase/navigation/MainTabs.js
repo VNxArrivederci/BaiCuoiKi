@@ -1,125 +1,188 @@
-// navigation/MainTabs.js
+// navigation/AppNavigator.js
+// Cập nhật: thêm tab Khám phá, Sự kiện, Thêm (+), Bản đồ và DetailScreen vào stack
 import React from 'react';
+import { NavigationContainer } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Text, View, StyleSheet } from 'react-native';
+import { ActivityIndicator, View, Text, TouchableOpacity } from 'react-native';
 
-import HomeScreen    from '../screens/HomeScreen';
-import MapScreen     from '../screens/MapScreen';
-import ProfileScreen from '../screens/ProfileScreen';
+import { useAuth } from '../context/AuthContext';
 
-const Tab = createBottomTabNavigator();
+import LoginScreen          from '../screens/LoginScreen';
+import RegisterScreen       from '../screens/RegisterScreen';
+import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
+import HomeScreen           from '../screens/HomeScreen';
+import ExploreScreen        from '../screens/ExploreScreen';
+import EventsScreen         from '../screens/EventsScreen';
+import MapScreen            from '../screens/MapScreen';
+import AddScreen            from '../screens/AddScreen';
+import ProfileScreen        from '../screens/ProfileScreen';
+import DetailScreen         from '../screens/DetailScreen';
+import PreferencesScreen    from '../screens/PreferencesScreen';
 
-// ── Tab Icon ────────────────────────────────────
-const TabIcon = ({ emoji, label, focused }) => (
-  <View style={[iconStyles.wrap, focused && iconStyles.wrapActive]}>
-    <Text style={iconStyles.emoji}>{emoji}</Text>
-    <Text style={[iconStyles.label, focused && iconStyles.labelActive]}>{label}</Text>
-  </View>
-);
+const Stack = createNativeStackNavigator();
+const Tab   = createBottomTabNavigator();
 
-const iconStyles = StyleSheet.create({
-  wrap: {
-    alignItems: 'center', justifyContent: 'center',
-    paddingTop: 6, paddingHorizontal: 14, paddingBottom: 2,
-    borderRadius: 16, minWidth: 64,
-  },
-  wrapActive:  { backgroundColor: '#F0FDF9' },
-  emoji:       { fontSize: 20 },
-  label:       { fontSize: 11, fontWeight: '600', color: '#9CA3AF', marginTop: 2 },
-  labelActive: { color: '#0D9488' },
-});
+const TEAL = '#0D9488';
+const GRAY = '#9CA3AF';
 
-// ── Placeholder screen ──────────────────────────
-function PlaceholderScreen(emoji, title) {
-  return function Screen() {
+// ── Tab Icon ─────────────────────────────────────────────────────
+const TabIcon = ({ emoji, label, focused, isAdd }) => {
+  if (isAdd) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F0FDF9' }}>
-        <Text style={{ fontSize: 48 }}>{emoji}</Text>
-        <Text style={{ fontSize: 20, fontWeight: '700', color: '#0D9488', marginTop: 12 }}>{title}</Text>
-        <Text style={{ fontSize: 13, color: '#9CA3AF', marginTop: 6 }}>Tính năng đang phát triển...</Text>
+      <View style={{
+        width: 52, height: 52, borderRadius: 26,
+        backgroundColor: TEAL, justifyContent: 'center', alignItems: 'center',
+        marginBottom: 22,
+        shadowColor: TEAL, shadowOpacity: 0.4, shadowRadius: 8, elevation: 8,
+      }}>
+        <Text style={{ fontSize: 26, color: '#fff' }}>＋</Text>
       </View>
     );
-  };
-}
-
-// ── Bottom Tab Navigator ────────────────────────
-export default function MainTabs() {
+  }
   return (
-    <Tab.Navigator
-      screenOptions={{
-        headerShown: true,
-        headerStyle:      { backgroundColor: '#0D9488' },
-        headerTitleStyle: { color: '#fff', fontWeight: '800', fontSize: 18 },
-        headerTintColor:  '#fff',
-        tabBarStyle: {
-          backgroundColor: '#fff',
-          borderTopWidth: 1,
-          borderTopColor: '#E5E7EB',
-          height: 64,
-          paddingBottom: 6,
-        },
-        tabBarShowLabel: false,
+    <View style={{ alignItems: 'center', justifyContent: 'center' }}>
+      <Text style={{ fontSize: 20 }}>{emoji}</Text>
+      <Text style={{
+        fontSize: 10, marginTop: 2, fontWeight: focused ? '700' : '400',
+        color: focused ? TEAL : GRAY,
+      }}>{label}</Text>
+    </View>
+  );
+};
+
+// ── Home Stack (includes Detail) ─────────────────────────────────
+const HomeStack = () => (
+  <Stack.Navigator>
+    <Stack.Screen name="ExploreHome" component={HomeScreen}
+      options={{ headerShown: false }} />
+  </Stack.Navigator>
+);
+
+const ExploreStack = () => (
+  <Stack.Navigator>
+    <Stack.Screen name="ExploreList" component={ExploreScreen}
+      options={{ title: '🔍 Khám phá', headerStyle: { backgroundColor: TEAL }, headerTitleStyle: { color: '#fff', fontWeight: '800' }, headerTintColor: '#fff' }} />
+    <Stack.Screen name="Detail" component={DetailScreen}
+      options={{ title: 'Chi tiết', headerStyle: { backgroundColor: TEAL }, headerTitleStyle: { color: '#fff', fontWeight: '800' }, headerTintColor: '#fff' }} />
+  </Stack.Navigator>
+);
+
+const EventsStack = () => (
+  <Stack.Navigator>
+    <Stack.Screen name="EventsList" component={EventsScreen}
+      options={{ title: '🎉 Sự kiện', headerStyle: { backgroundColor: TEAL }, headerTitleStyle: { color: '#fff', fontWeight: '800' }, headerTintColor: '#fff' }} />
+    <Stack.Screen name="Detail" component={DetailScreen}
+      options={{ title: 'Chi tiết sự kiện', headerStyle: { backgroundColor: TEAL }, headerTitleStyle: { color: '#fff', fontWeight: '800' }, headerTintColor: '#fff' }} />
+  </Stack.Navigator>
+);
+
+const MapStack = () => (
+  <Stack.Navigator>
+    <Stack.Screen name="MapMain" component={MapScreen}
+      options={{ title: '🗺️ Bản đồ', headerStyle: { backgroundColor: TEAL }, headerTitleStyle: { color: '#fff', fontWeight: '800' }, headerTintColor: '#fff' }} />
+    <Stack.Screen name="Detail" component={DetailScreen}
+      options={{ title: 'Chi tiết', headerStyle: { backgroundColor: TEAL }, headerTitleStyle: { color: '#fff', fontWeight: '800' }, headerTintColor: '#fff' }} />
+  </Stack.Navigator>
+);
+
+const AddStack = () => (
+  <Stack.Navigator>
+    <Stack.Screen name="AddMain" component={AddScreen}
+      options={{ title: '➕ Thêm mới', headerStyle: { backgroundColor: TEAL }, headerTitleStyle: { color: '#fff', fontWeight: '800' }, headerTintColor: '#fff' }} />
+  </Stack.Navigator>
+);
+
+// ── Main Tabs ─────────────────────────────────────────────────────
+const MainTabs = () => (
+  <Tab.Navigator
+    screenOptions={{
+      headerShown: false,
+      tabBarShowLabel: false,
+      tabBarStyle: {
+        backgroundColor: '#fff',
+        borderTopWidth: 1,
+        borderTopColor: '#E5E7EB',
+        height: 68,
+        paddingBottom: 8,
+        paddingTop: 6,
+      },
+    }}
+  >
+    <Tab.Screen
+      name="Home"
+      component={HomeStack}
+      options={{
+        tabBarIcon: ({ focused }) => <TabIcon emoji="🏠" label="Trang chủ" focused={focused} />,
       }}
-    >
-      {/* Khám phá */}
-      <Tab.Screen
-        name="Explore"
-        component={HomeScreen}
-        options={{
-          headerTitle: '🌍 ExploreEase',
-          tabBarIcon: ({ focused }) => (
-            <TabIcon emoji="🔍" label="Khám phá" focused={focused} />
-          ),
-        }}
-      />
+    />
+    <Tab.Screen
+      name="Explore"
+      component={ExploreStack}
+      options={{
+        tabBarIcon: ({ focused }) => <TabIcon emoji="🔍" label="Khám phá" focused={focused} />,
+      }}
+    />
+    <Tab.Screen
+      name="Add"
+      component={AddStack}
+      options={{
+        tabBarIcon: ({ focused }) => <TabIcon emoji="＋" label="Thêm" focused={focused} isAdd />,
+      }}
+    />
+    <Tab.Screen
+      name="Events"
+      component={EventsStack}
+      options={{
+        tabBarIcon: ({ focused }) => <TabIcon emoji="🎉" label="Sự kiện" focused={focused} />,
+      }}
+    />
+    <Tab.Screen
+      name="Map"
+      component={MapStack}
+      options={{
+        tabBarIcon: ({ focused }) => <TabIcon emoji="🗺️" label="Bản đồ" focused={focused} />,
+      }}
+    />
+    <Tab.Screen
+      name="Profile"
+      component={ProfileScreen}
+      options={{
+        tabBarIcon: ({ focused }) => <TabIcon emoji="👤" label="Hồ sơ" focused={focused} />,
+        headerShown: true,
+        headerTitle: '👤 Hồ sơ của tôi',
+        headerStyle: { backgroundColor: TEAL },
+        headerTitleStyle: { color: '#fff', fontWeight: '800' },
+      }}
+    />
+  </Tab.Navigator>
+);
 
-      {/* Bản đồ */}
-      <Tab.Screen
-        name="Map"
-        component={MapScreen}
-        options={{
-          headerTitle: '🗺️ Bản đồ',
-          tabBarIcon: ({ focused }) => (
-            <TabIcon emoji="🗺️" label="Bản đồ" focused={focused} />
-          ),
-        }}
-      />
+// ── Auth Stack ────────────────────────────────────────────────────
+const AuthStack = () => (
+  <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Screen name="Login"          component={LoginScreen} />
+    <Stack.Screen name="Register"       component={RegisterScreen} />
+    <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+    <Stack.Screen name="Preferences"    component={PreferencesScreen} />
+  </Stack.Navigator>
+);
 
-      {/* Sự kiện (placeholder) */}
-      <Tab.Screen
-        name="Events"
-        component={PlaceholderScreen('🎉', 'Sự kiện')}
-        options={{
-          headerTitle: '🎉 Sự kiện',
-          tabBarIcon: ({ focused }) => (
-            <TabIcon emoji="🎉" label="Sự kiện" focused={focused} />
-          ),
-        }}
-      />
+// ── Root ──────────────────────────────────────────────────────────
+export default function AppNavigator() {
+  const { user, loading } = useAuth();
 
-      {/* Đã lưu (placeholder) */}
-      <Tab.Screen
-        name="Saved"
-        component={PlaceholderScreen('🔖', 'Đã lưu')}
-        options={{
-          headerTitle: '🔖 Đã lưu',
-          tabBarIcon: ({ focused }) => (
-            <TabIcon emoji="🔖" label="Đã lưu" focused={focused} />
-          ),
-        }}
-      />
+  if (loading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F0FDF9' }}>
+        <ActivityIndicator size="large" color={TEAL} />
+      </View>
+    );
+  }
 
-      {/* Profile */}
-      <Tab.Screen
-        name="Profile"
-        component={ProfileScreen}
-        options={{
-          headerTitle: '👤 Hồ sơ của tôi',
-          tabBarIcon: ({ focused }) => (
-            <TabIcon emoji="👤" label="Hồ sơ" focused={focused} />
-          ),
-        }}
-      />
-    </Tab.Navigator>
+  return (
+    <NavigationContainer>
+      {user ? <MainTabs /> : <AuthStack />}
+    </NavigationContainer>
   );
 }

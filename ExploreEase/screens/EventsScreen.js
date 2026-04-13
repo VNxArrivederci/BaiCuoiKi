@@ -1,5 +1,5 @@
 // screens/EventsScreen.js
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
   ActivityIndicator, RefreshControl, TextInput,
@@ -114,8 +114,8 @@ function computeStatus(item) {
 
 export default function EventsScreen({ navigation }) {
   const { user } = useAuth();
-  const userInterests   = user?.profile?.interests || [];
-  const userTravelStyle = user?.profile?.travelStyle || '';
+const userInterests   = useMemo(() => user?.profile?.interests || [], [user?.profile?.interests]);
+const userTravelStyle = user?.profile?.travelStyle || '';
 
   const [events, setEvents]       = useState([]);
   const [loading, setLoading]     = useState(true);
