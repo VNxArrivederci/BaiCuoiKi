@@ -281,7 +281,7 @@ export default function ProfileScreen() {
                     placeholder="Mật khẩu mới (ít nhất 6 ký tự)"
                     placeholderTextColor="#9CA3AF"
                     secureTextEntry
-                  />
+                  /> 
                   <TextInput
                     style={[styles.input, { marginTop: 10 }]}
                     value={confirmPass}

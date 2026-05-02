@@ -2,17 +2,15 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
-  ActivityIndicator, RefreshControl, TextInput,
+  ActivityIndicator, RefreshControl, TextInput, Image,
 } from 'react-native';
-import {
-  collection, query, orderBy, limit, startAfter,
-  getDocs, where,
-} from 'firebase/firestore';
+import { collection, query, orderBy, limit, startAfter, getDocs } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import { useAuth } from '../context/AuthContext';
 
-const TEAL = '#0D9488';
-const PAGE_SIZE = 10;
+const TEAL      = '#0D9488';
+const PAGE_SIZE  = 10;
+const PLACEHOLDER = 'https://via.placeholder.com/400x200?text=No+Image';
 
 const STATUS_OPTS = [
   { key: '',          label: '📋 Tất cả' },
@@ -26,6 +24,26 @@ const SORT_OPTIONS = [
   { key: 'rating',    label: '⭐ Đánh giá' },
 ];
 
+const RATING_OPTS = [
+  { key: 0,   label: 'Tất cả' },
+  { key: 3,   label: '⭐ 3+' },
+  { key: 4,   label: '⭐ 4+' },
+  { key: 4.5, label: '⭐ 4.5+' },
+];
+
+const PRICE_OPTS = [
+  { key: 'all',  label: '💰 Tất cả' },
+  { key: 'free', label: '🆓 Miễn phí' },
+  { key: 'paid', label: '🎟 Có phí' },
+];
+
+function computeStatus(item) {
+  const now = new Date(), start = new Date(item.startDate), end = new Date(item.endDate);
+  if (now < start) return 'incoming';
+  if (now > end)   return 'completed';
+  return 'ongoing';
+}
+
 function StatusBadge({ status }) {
   const map = {
     incoming:  { label: '🔜 Sắp diễn ra', bg: '#EFF6FF', color: '#3B82F6' },
@@ -34,24 +52,19 @@ function StatusBadge({ status }) {
   };
   const s = map[status] || { label: status, bg: '#F3F4F6', color: '#6B7280' };
   return (
-    <View style={[statusStyles.badge, { backgroundColor: s.bg }]}>
-      <Text style={[statusStyles.text, { color: s.color }]}>{s.label}</Text>
+    <View style={[styles.badge, { backgroundColor: s.bg }]}>
+      <Text style={[styles.badgeText, { color: s.color }]}>{s.label}</Text>
     </View>
   );
 }
-const statusStyles = StyleSheet.create({
-  badge: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
-  text:  { fontSize: 11, fontWeight: '700' },
-});
 
 function Countdown({ startDate }) {
-  const now  = new Date();
-  const diff = new Date(startDate) - now;
+  const diff = new Date(startDate) - new Date();
   if (diff <= 0) return null;
-  const days  = Math.floor(diff / 86400000);
+  const days = Math.floor(diff / 86400000);
   const hours = Math.floor((diff % 86400000) / 3600000);
   return (
-    <Text style={{ fontSize: 11, color: '#F59E0B', fontWeight: '700', marginTop: 4 }}>
+    <Text style={styles.countdown}>
       ⏱ {days > 0 ? `${days} ngày ` : ''}{hours} giờ nữa
     </Text>
   );
@@ -59,7 +72,7 @@ function Countdown({ startDate }) {
 
 function StarBar({ rating }) {
   return (
-    <View style={{ flexDirection: 'row', gap: 2 }}>
+    <View style={{ flexDirection: 'row', gap: 2, alignItems: 'center' }}>
       {[1,2,3,4,5].map(i => (
         <Text key={i} style={{ fontSize: 12, color: i <= Math.round(rating) ? '#F59E0B' : '#D1D5DB' }}>★</Text>
       ))}
@@ -72,59 +85,65 @@ function StarBar({ rating }) {
 
 function EventCard({ item, onPress }) {
   const formatDate = (iso) => iso
-    ? new Date(iso).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    ? new Date(iso).toLocaleDateString('vi-VN', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' })
     : '';
+  const isFree = !item.price || item.price === 'Miễn phí';
 
   return (
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.85}>
-      <View style={styles.cardHeader}>
-        <StatusBadge status={item.status} />
-        <Text style={styles.priceTag}>{item.price || 'Miễn phí'}</Text>
-      </View>
-      <Text style={styles.cardTitle} numberOfLines={2}>{item.title}</Text>
-      <Text style={styles.cardAddress} numberOfLines={1}>📍 {item.address}</Text>
-      {item.description ? (
-        <Text style={styles.cardDesc} numberOfLines={2}>{item.description}</Text>
-      ) : null}
+      {/* Thumbnail */}
+      <Image
+        source={{ uri: item.imageURL || PLACEHOLDER }}
+        style={styles.thumbnail}
+        resizeMode="cover"
+      />
 
-      <View style={styles.dateRow}>
-        <Text style={styles.dateText}>🗓 {formatDate(item.startDate)}</Text>
-        <Text style={styles.dateText}> → {formatDate(item.endDate)}</Text>
-      </View>
+      <View style={styles.cardBody}>
+        <View style={styles.cardHeader}>
+          <StatusBadge status={item.status} />
+          <View style={[styles.priceBadge, { backgroundColor: isFree ? '#F0FDF9' : '#FEF3C7' }]}>
+            <Text style={[styles.priceText, { color: isFree ? TEAL : '#D97706' }]}>
+              {isFree ? '🆓 Miễn phí' : `🎟 ${item.price}`}
+            </Text>
+          </View>
+        </View>
 
-      {item.status === 'incoming' && <Countdown startDate={item.startDate} />}
+        <Text style={styles.cardTitle} numberOfLines={2}>{item.title}</Text>
+        <Text style={styles.cardAddress} numberOfLines={1}>📍 {item.address}</Text>
+        {item.description
+          ? <Text style={styles.cardDesc} numberOfLines={2}>{item.description}</Text>
+          : null}
 
-      <View style={styles.cardFooter}>
-        <StarBar rating={item.rating || 0} />
-        <Text style={styles.ratingCount}>({item.ratingCount || 0} đánh giá)</Text>
+        <View style={styles.dateRow}>
+          <Text style={styles.dateText}>🗓 {formatDate(item.startDate)} → {formatDate(item.endDate)}</Text>
+        </View>
+
+        {item.status === 'incoming' && <Countdown startDate={item.startDate} />}
+
+        <View style={styles.cardFooter}>
+          <StarBar rating={item.rating || 0} />
+          <Text style={styles.ratingCount}>({item.ratingCount || 0} đánh giá)</Text>
+        </View>
       </View>
     </TouchableOpacity>
   );
 }
 
-// ── Cập nhật status dựa theo thời gian thực ─────────────────────
-function computeStatus(item) {
-  const now   = new Date();
-  const start = new Date(item.startDate);
-  const end   = new Date(item.endDate);
-  if (now < start) return 'incoming';
-  if (now > end)   return 'completed';
-  return 'ongoing';
-}
-
 export default function EventsScreen({ navigation }) {
   const { user } = useAuth();
-const userInterests   = useMemo(() => user?.profile?.interests || [], [user?.profile?.interests]);
-const userTravelStyle = user?.profile?.travelStyle || '';
+  const userInterests   = useMemo(() => user?.profile?.interests || [], [user?.profile?.interests]);
+  const userTravelStyle = user?.profile?.travelStyle || '';
 
-  const [events, setEvents]       = useState([]);
-  const [loading, setLoading]     = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const [events, setEvents]           = useState([]);
+  const [loading, setLoading]         = useState(true);
+  const [refreshing, setRefreshing]   = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [hasMore, setHasMore]     = useState(true);
+  const [hasMore, setHasMore]         = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
-  const [sortBy, setSortBy]       = useState('createdAt');
-  const [search, setSearch]       = useState('');
+  const [sortBy, setSortBy]           = useState('createdAt');
+  const [search, setSearch]           = useState('');
+  const [minRating, setMinRating]     = useState(0);
+  const [priceFilter, setPriceFilter] = useState('all');
 
   const lastDocRef = useRef(null);
 
@@ -146,7 +165,7 @@ const userTravelStyle = user?.profile?.travelStyle || '';
     setLoading(true);
     try {
       const snap = await getDocs(buildQuery());
-      let docs = snap.docs.map(d => ({ id: d.id, ...d.data(), status: computeStatus({ ...d.data() }) }));
+      let docs = snap.docs.map(d => ({ id: d.id, ...d.data(), status: computeStatus(d.data()) }));
       docs.sort((a, b) => scoreItem(b) - scoreItem(a));
       lastDocRef.current = snap.docs[snap.docs.length - 1] || null;
       setEvents(docs);
@@ -160,7 +179,7 @@ const userTravelStyle = user?.profile?.travelStyle || '';
     setLoadingMore(true);
     try {
       const snap = await getDocs(buildQuery(lastDocRef.current));
-      let docs = snap.docs.map(d => ({ id: d.id, ...d.data(), status: computeStatus({ ...d.data() }) }));
+      let docs = snap.docs.map(d => ({ id: d.id, ...d.data(), status: computeStatus(d.data()) }));
       docs.sort((a, b) => scoreItem(b) - scoreItem(a));
       lastDocRef.current = snap.docs[snap.docs.length - 1] || null;
       setEvents(prev => [...prev, ...docs]);
@@ -181,17 +200,16 @@ const userTravelStyle = user?.profile?.travelStyle || '';
     fetchEvents();
   }, [fetchEvents]);
 
-  // Client-side filter
+  // ── Client-side filters ──────────────────────────────────────
   const displayed = events.filter(e => {
-    const matchStatus = !statusFilter || e.status === statusFilter;
-    const matchSearch = !search.trim() ||
-      e.title.toLowerCase().includes(search.toLowerCase()) ||
-      e.address.toLowerCase().includes(search.toLowerCase());
-    return matchStatus && matchSearch;
+    if (statusFilter && e.status !== statusFilter) return false;
+    if (minRating > 0 && (e.rating || 0) < minRating) return false;
+    if (priceFilter === 'free' && e.price && e.price !== 'Miễn phí') return false;
+    if (priceFilter === 'paid' && (!e.price || e.price === 'Miễn phí')) return false;
+    if (search.trim() && !e.title.toLowerCase().includes(search.toLowerCase()) &&
+        !e.address.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
   });
-
-  const renderFooter = () =>
-    loadingMore ? <ActivityIndicator color={TEAL} style={{ marginVertical: 16 }} /> : null;
 
   return (
     <View style={styles.screen}>
@@ -209,14 +227,40 @@ const userTravelStyle = user?.profile?.travelStyle || '';
       </View>
 
       {/* Sort */}
-      <View style={styles.sortRow}>
+      <View style={styles.filterRow}>
         {SORT_OPTIONS.map(o => (
           <TouchableOpacity
             key={o.key}
-            style={[styles.sortBtn, sortBy === o.key && styles.sortBtnActive]}
+            style={[styles.filterBtn, sortBy === o.key && styles.filterBtnActive]}
             onPress={() => setSortBy(o.key)}
           >
-            <Text style={[styles.sortText, sortBy === o.key && styles.sortTextActive]}>{o.label}</Text>
+            <Text style={[styles.filterText, sortBy === o.key && styles.filterTextActive]}>{o.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* Rating filter */}
+      <View style={styles.filterRow}>
+        {RATING_OPTS.map(o => (
+          <TouchableOpacity
+            key={o.key}
+            style={[styles.filterBtn, minRating === o.key && styles.filterBtnActive]}
+            onPress={() => setMinRating(o.key)}
+          >
+            <Text style={[styles.filterText, minRating === o.key && styles.filterTextActive]}>{o.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* Price filter */}
+      <View style={styles.filterRow}>
+        {PRICE_OPTS.map(o => (
+          <TouchableOpacity
+            key={o.key}
+            style={[styles.filterBtn, priceFilter === o.key && styles.filterBtnActive]}
+            onPress={() => setPriceFilter(o.key)}
+          >
+            <Text style={[styles.filterText, priceFilter === o.key && styles.filterTextActive]}>{o.label}</Text>
           </TouchableOpacity>
         ))}
       </View>
@@ -227,7 +271,7 @@ const userTravelStyle = user?.profile?.travelStyle || '';
         data={STATUS_OPTS}
         keyExtractor={s => s.key}
         showsHorizontalScrollIndicator={false}
-        style={styles.statusList}
+        style={styles.catList}
         contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}
         renderItem={({ item: s }) => (
           <TouchableOpacity
@@ -245,8 +289,8 @@ const userTravelStyle = user?.profile?.travelStyle || '';
       ) : displayed.length === 0 ? (
         <View style={styles.empty}>
           <Text style={{ fontSize: 40 }}>🎉</Text>
-          <Text style={styles.emptyText}>Chưa có sự kiện nào</Text>
-          <Text style={styles.emptyHint}>Hãy tạo sự kiện đầu tiên!</Text>
+          <Text style={styles.emptyText}>Không tìm thấy sự kiện</Text>
+          <Text style={styles.emptyHint}>Thử thay đổi bộ lọc</Text>
         </View>
       ) : (
         <FlatList
@@ -261,7 +305,8 @@ const userTravelStyle = user?.profile?.travelStyle || '';
           contentContainerStyle={{ padding: 16, paddingTop: 8, gap: 12 }}
           onEndReached={loadMore}
           onEndReachedThreshold={0.4}
-          ListFooterComponent={renderFooter}
+          ListFooterComponent={() => loadingMore
+            ? <ActivityIndicator color={TEAL} style={{ marginVertical: 16 }} /> : null}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={TEAL} />}
         />
       )}
@@ -282,16 +327,16 @@ const styles = StyleSheet.create({
   searchIcon:  { fontSize: 16, marginRight: 8 },
   searchInput: { flex: 1, fontSize: 15, color: '#111827' },
 
-  sortRow: { flexDirection: 'row', gap: 8, marginHorizontal: 16, marginBottom: 8 },
-  sortBtn: {
-    paddingHorizontal: 16, paddingVertical: 7, borderRadius: 20,
+  filterRow: { flexDirection: 'row', gap: 8, marginHorizontal: 16, marginBottom: 6, flexWrap: 'wrap' },
+  filterBtn: {
+    paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20,
     borderWidth: 1.5, borderColor: '#E5E7EB', backgroundColor: '#F9FAFB',
   },
-  sortBtnActive:  { borderColor: TEAL, backgroundColor: '#F0FDF9' },
-  sortText:       { fontSize: 12, fontWeight: '600', color: '#6B7280' },
-  sortTextActive: { color: TEAL },
+  filterBtnActive:  { borderColor: TEAL, backgroundColor: '#F0FDF9' },
+  filterText:       { fontSize: 12, fontWeight: '600', color: '#6B7280' },
+  filterTextActive: { color: TEAL },
 
-  statusList: { maxHeight: 46, marginBottom: 4 },
+  catList: { maxHeight: 46, marginBottom: 4 },
   catChip: {
     paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
     borderWidth: 1.5, borderColor: '#E5E7EB', backgroundColor: '#F9FAFB',
@@ -300,17 +345,24 @@ const styles = StyleSheet.create({
   catText:       { fontSize: 12, fontWeight: '600', color: '#6B7280' },
   catTextActive: { color: TEAL },
 
+  badge:     { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
+  badgeText: { fontSize: 11, fontWeight: '700' },
+
   card: {
-    backgroundColor: '#fff', borderRadius: 16, padding: 16,
+    backgroundColor: '#fff', borderRadius: 16, overflow: 'hidden',
     shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10, elevation: 2,
   },
+  thumbnail:   { width: '100%', height: 150, backgroundColor: '#E5E7EB' },
+  cardBody:    { padding: 12 },
   cardHeader:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  priceTag:    { fontSize: 12, fontWeight: '700', color: '#0D9488', backgroundColor: '#F0FDF9', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+  priceBadge:  { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
+  priceText:   { fontSize: 11, fontWeight: '700' },
   cardTitle:   { fontSize: 16, fontWeight: '800', color: '#111827', marginBottom: 4 },
   cardAddress: { fontSize: 12, color: '#6B7280', marginBottom: 4 },
   cardDesc:    { fontSize: 13, color: '#4B5563', lineHeight: 18, marginBottom: 6 },
-  dateRow:     { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 4 },
+  dateRow:     { marginBottom: 4 },
   dateText:    { fontSize: 12, color: '#6B7280' },
+  countdown:   { fontSize: 11, color: '#F59E0B', fontWeight: '700', marginTop: 4 },
   cardFooter:  { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
   ratingCount: { fontSize: 11, color: '#9CA3AF' },
 

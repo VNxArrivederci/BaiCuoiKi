@@ -1,4 +1,4 @@
-// screens/DetailScreen.js
+  // screens/DetailScreen.js
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,

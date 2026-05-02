@@ -1,557 +1,333 @@
-// screens/HomeScreen.js — Trang chủ tích hợp bản đồ Leaflet + CARTO
-import React, { useRef, useState, useEffect } from 'react';
+// screens/HomeScreen.js
+// Bản đồ chính: GPS, markers places + events, bottom card, chỉ đường
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, ActivityIndicator,
-  TouchableOpacity, TextInput, Alert,
+  View, Text, TouchableOpacity, StyleSheet,
+  ActivityIndicator, Linking, Platform, Animated,
+  Dimensions,
 } from 'react-native';
-import WebView from 'react-native-webview';
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 
-const TEAL = '#0D9488';
-const GOLD = '#F59E0B';
+const { height: SCREEN_H } = Dimensions.get('window');
+const TEAL  = '#0D9488';
+const TEAL2 = '#0F766E';
+const CARD_H = 170;
 
-// ── Build HTML Leaflet ───────────────────────────────────────────
-function buildMapHtml(markers = []) {
-  const markersJson = JSON.stringify(markers);
-  return `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0,
-        maximum-scale=1.0, user-scalable=no"/>
-  <title>ExploreEase Map</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-  <style>
-    * { margin:0; padding:0; box-sizing:border-box; }
-    html, body { width:100%; height:100%; }
-    #map { width:100%; height:100%; }
+// ── Màu marker theo loại ───────────────────────────────────────
+const MARKER_COLOR = { place: TEAL, event: '#F59E0B' };
 
-    #toast {
-      position:absolute; bottom:80px; left:50%;
-      transform:translateX(-50%); z-index:1000;
-      background:rgba(17,24,39,.82); color:#fff;
-      padding:10px 20px; border-radius:20px; font-size:13px;
-      font-family:sans-serif; white-space:nowrap;
-      opacity:0; transition:opacity .3s; pointer-events:none;
-    }
-    #toast.show { opacity:1; }
-
-    .place-dot {
-      width:34px; height:34px; background:#0D9488;
-      border:3px solid #fff; border-radius:50%;
-      display:flex; align-items:center; justify-content:center;
-      font-size:16px; box-shadow:0 2px 10px rgba(0,0,0,.25); cursor:pointer;
-    }
-    .event-dot {
-      width:34px; height:34px; background:#F59E0B;
-      border:3px solid #fff; border-radius:50%;
-      display:flex; align-items:center; justify-content:center;
-      font-size:16px; box-shadow:0 2px 10px rgba(0,0,0,.25); cursor:pointer;
-    }
-    .user-dot {
-      width:20px; height:20px; background:#0D9488;
-      border:3px solid #fff; border-radius:50%;
-      box-shadow:0 0 0 5px rgba(13,148,136,.2);
-    }
-
-    .leaflet-popup-content-wrapper {
-      border-radius:16px !important;
-      box-shadow:0 4px 20px rgba(0,0,0,.15) !important;
-      padding:0 !important; overflow:hidden;
-    }
-    .leaflet-popup-content { margin:0 !important; }
-    .popup-inner  { padding:14px 16px; min-width:190px; max-width:250px; }
-    .popup-type   { font-size:11px; font-weight:700; color:#0D9488; margin-bottom:5px; }
-    .popup-title  { font-size:15px; font-weight:800; color:#111827;
-                    margin-bottom:4px; line-height:1.3; }
-    .popup-addr   { font-size:12px; color:#6B7280; margin-bottom:4px; }
-    .popup-rating { font-size:12px; color:#F59E0B; font-weight:600; margin-bottom:10px; }
-    .popup-btn {
-      display:block; width:100%; padding:9px 0;
-      background:#0D9488; color:#fff; border:none;
-      border-radius:9px; font-size:13px; font-weight:700;
-      cursor:pointer; text-align:center;
-    }
-    .popup-btn:active { background:#0F766E; }
-  </style>
-</head>
-<body>
-  <div id="map"></div>
-  <div id="toast"></div>
-
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script>
-    const map = L.map('map', {
-      center: [10.7769, 106.7009],
-      zoom: 14,
-      zoomControl: true,
-    });
-
-    L.tileLayer(
-      'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-      {
-        attribution: '© OpenStreetMap © CARTO',
-        maxZoom: 19,
-        subdomains: 'abcd',
-      }
-    ).addTo(map);
-
-    let userMarker = null, userCircle = null;
-
-    const MARKERS = ${markersJson};
-    MARKERS.forEach(m => {
-      if (!m.lat || !m.lng) return;
-      const isEvent = m.type === 'event';
-      const icon = L.divIcon({
-        className: '',
-        html: '<div class="' + (isEvent ? 'event-dot' : 'place-dot') + '">'
-              + (isEvent ? '🎉' : '📍') + '</div>',
-        iconSize:    [34, 34],
-        iconAnchor:  [17, 17],
-        popupAnchor: [0, -20],
-      });
-      const ratingHtml = m.rating > 0
-        ? '<div class="popup-rating">⭐ ' + m.rating.toFixed(1)
-          + ' (' + (m.ratingCount || 0) + ' đánh giá)</div>'
-        : '';
-      const safeItem = JSON.stringify(JSON.stringify(m));
-      const popupHtml =
-        '<div class="popup-inner">' +
-          '<div class="popup-type">' + (isEvent ? '🎉 Sự kiện' : '📍 Địa điểm') + '</div>' +
-          '<div class="popup-title">' + (m.title  || '') + '</div>' +
-          '<div class="popup-addr">'  + (m.address || '') + '</div>' +
-          ratingHtml +
-          '<button class="popup-btn" onclick="openDetail(' + safeItem + ')">' +
-            'Xem chi tiết →' +
-          '</button>' +
-        '</div>';
-      L.marker([m.lat, m.lng], { icon })
-        .addTo(map)
-        .bindPopup(popupHtml, { maxWidth: 270 });
-    });
-
-    function openDetail(jsonStr) {
-      try {
-        const item = JSON.parse(jsonStr);
-        sendToRN({ type: 'OPEN_DETAIL', item });
-      } catch(e) {}
-    }
-
-    window.addEventListener('message', (e) => {
-      try {
-        const cmd = JSON.parse(e.data);
-        if (cmd.type === 'FLY_TO') {
-          map.flyTo([cmd.lat, cmd.lng], cmd.zoom || 16,
-            { animate: true, duration: 1.2 });
-        }
-        if (cmd.type === 'SET_USER_LOCATION') {
-          placeUserMarker(cmd.lat, cmd.lng, cmd.accuracy || 30);
-        }
-        if (cmd.type === 'SET_USER_LOCATION_ERROR') {
-          showToast('Không lấy được vị trí. Kiểm tra quyền GPS.');
-        }
-      } catch {}
-    });
-
-    function placeUserMarker(lat, lng, accuracy) {
-      if (userCircle) map.removeLayer(userCircle);
-      if (userMarker) map.removeLayer(userMarker);
-      userCircle = L.circle([lat, lng], {
-        radius: accuracy,
-        color: '#0D9488', fillColor: '#0D9488',
-        fillOpacity: 0.12, weight: 1,
-      }).addTo(map);
-      const dotIcon = L.divIcon({
-        className: '',
-        html: '<div class="user-dot"></div>',
-        iconSize: [20, 20], iconAnchor: [10, 10],
-      });
-      userMarker = L.marker([lat, lng], { icon: dotIcon, zIndexOffset: 1000 })
-        .addTo(map)
-        .bindPopup('<b>📍 Vị trí của bạn</b>');
-      map.flyTo([lat, lng], 16, { animate: true, duration: 1.2 });
-      showToast('📍 Đã xác định vị trí');
-    }
-
-    function sendToRN(data) {
-      if (window.ReactNativeWebView) {
-        window.ReactNativeWebView.postMessage(JSON.stringify(data));
-      }
-    }
-
-    function showToast(msg) {
-      const t = document.getElementById('toast');
-      t.textContent = msg;
-      t.classList.add('show');
-      clearTimeout(window._toastTimer);
-      window._toastTimer = setTimeout(() => t.classList.remove('show'), 2500);
-    }
-  </script>
-</body>
-</html>
-`;
+// ── Mở Google Maps chỉ đường ───────────────────────────────────
+function openDirections(lat, lng, label = '') {
+  const encoded = encodeURIComponent(label);
+  const url = Platform.select({
+    ios:     `maps://?daddr=${lat},${lng}&q=${encoded}`,
+    android: `google.navigation:q=${lat},${lng}`,
+  });
+  const fallback = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+  Linking.canOpenURL(url)
+    .then(ok => Linking.openURL(ok ? url : fallback))
+    .catch(() => Linking.openURL(fallback));
 }
 
-// ── Main Component ───────────────────────────────────────────────
+// ── Bottom Info Card ───────────────────────────────────────────
+function InfoCard({ item, onClose, onDetail, slideAnim }) {
+  if (!item) return null;
+  const isEvent = item.type === 'event';
+  return (
+    <Animated.View style={[styles.card, { transform: [{ translateY: slideAnim }] }]}>
+      {/* Handle */}
+      <View style={styles.handle} />
+
+      {/* Type badge */}
+      <View style={[styles.typeBadge, { backgroundColor: isEvent ? '#FEF3C7' : '#F0FDF9' }]}>
+        <Text style={[styles.typeBadgeText, { color: isEvent ? '#D97706' : TEAL }]}>
+          {isEvent ? '🎉 Sự kiện' : '📍 Địa điểm'}
+        </Text>
+      </View>
+
+      <Text style={styles.cardTitle} numberOfLines={2}>{item.title}</Text>
+      <Text style={styles.cardAddr} numberOfLines={1}>📍 {item.address}</Text>
+
+      {/* Rating */}
+      <View style={styles.ratingRow}>
+        {[1,2,3,4,5].map(i => (
+          <Text key={i} style={{ fontSize: 13, color: i <= Math.round(item.rating || 0) ? '#F59E0B' : '#D1D5DB' }}>★</Text>
+        ))}
+        <Text style={styles.ratingText}>
+          {item.rating > 0 ? item.rating.toFixed(1) : 'Chưa có'} ({item.ratingCount || 0})
+        </Text>
+      </View>
+
+      {/* Buttons */}
+      <View style={styles.btnRow}>
+        <TouchableOpacity
+          style={styles.btnDetail}
+          onPress={onDetail}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.btnDetailText}>Xem chi tiết</Text>
+        </TouchableOpacity>
+
+        {item.lat && item.lng ? (
+          <TouchableOpacity
+            style={styles.btnDir}
+            onPress={() => openDirections(item.lat, item.lng, item.title)}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.btnDirText}>🧭 Chỉ đường</Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
+
+      {/* Close */}
+      <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
+        <Text style={styles.closeTxt}>✕</Text>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
+
+// ── Main ───────────────────────────────────────────────────────
 export default function HomeScreen({ navigation }) {
-  const webRef = useRef(null);
+  const mapRef = useRef(null);
+  const slideAnim = useRef(new Animated.Value(CARD_H + 40)).current;
 
-  const [markers, setMarkers]         = useState([]);
-  const [mapReady, setMapReady]       = useState(false);
-  const [webLoading, setWebLoading]   = useState(true);
-  const [webError, setWebError]       = useState(false);
-  const [locating, setLocating]       = useState(false);
+  const [location, setLocation]   = useState(null);
+  const [locError, setLocError]   = useState(false);
+  const [items, setItems]         = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [selected, setSelected]   = useState(null);
 
-  const [search, setSearch]           = useState('');
-  const [filter, setFilter]           = useState('all');
-  const [suggestions, setSuggestions] = useState([]);
-
-  // ── Xin quyền + fetch markers ────────────────────
+  // ── Xin quyền + lấy GPS ─────────────────────────────────────
   useEffect(() => {
-    const init = async () => {
-      await Location.requestForegroundPermissionsAsync();
+    (async () => {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') { setLocError(true); return; }
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      setLocation(loc.coords);
+    })();
+  }, []);
+
+  // ── Fetch places + events từ Firestore ──────────────────────
+  useEffect(() => {
+    (async () => {
       try {
         const [placesSnap, eventsSnap] = await Promise.all([
           getDocs(collection(db, 'places')),
           getDocs(collection(db, 'events')),
         ]);
         const places = placesSnap.docs
-          .map(d => ({ id: d.id, ...d.data(), type: 'place' }))
-          .filter(d => d.lat && d.lng);
+          .map(d => ({ id: d.id, type: 'place', ...d.data() }))
+          .filter(p => p.lat && p.lng);
         const events = eventsSnap.docs
-          .map(d => ({ id: d.id, ...d.data(), type: 'event' }))
-          .filter(d => d.lat && d.lng);
-        setMarkers([...places, ...events]);
-      } catch (e) {
-        console.error('Firestore:', e);
+          .map(d => ({ id: d.id, type: 'event', ...d.data() }))
+          .filter(e => e.lat && e.lng);
+        setItems([...places, ...events]);
+      } catch (err) {
+        console.error('Fetch map items:', err);
       } finally {
-        setMapReady(true);
+        setLoading(false);
       }
-    };
-    init();
+    })();
   }, []);
 
-  // ── Định vị qua expo-location ────────────────────
-  const handleLocate = async () => {
-    setLocating(true);
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert(
-          'Cần quyền vị trí',
-          'Vào Cài đặt → Ứng dụng → ExploreEase → Quyền → Vị trí → Cho phép',
-          [{ text: 'OK' }],
-        );
-        webRef.current?.postMessage(
-          JSON.stringify({ type: 'SET_USER_LOCATION_ERROR' })
-        );
-        return;
-      }
-      const loc = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
-      });
-      const { latitude, longitude, accuracy } = loc.coords;
-      webRef.current?.postMessage(
-        JSON.stringify({
-          type: 'SET_USER_LOCATION',
-          lat: latitude,
-          lng: longitude,
-          accuracy: accuracy || 30,
-        })
-      );
-    } catch {
-      webRef.current?.postMessage(
-        JSON.stringify({ type: 'SET_USER_LOCATION_ERROR' })
-      );
-    } finally {
-      setLocating(false);
-    }
+  // ── Animate card ─────────────────────────────────────────────
+  const showCard = useCallback((item) => {
+    setSelected(item);
+    Animated.spring(slideAnim, {
+      toValue: 0,
+      useNativeDriver: true,
+      tension: 60,
+      friction: 10,
+    }).start();
+  }, [slideAnim]);
+
+  const hideCard = useCallback(() => {
+    Animated.timing(slideAnim, {
+      toValue: CARD_H + 40,
+      duration: 220,
+      useNativeDriver: true,
+    }).start(() => setSelected(null));
+  }, [slideAnim]);
+
+  // ── Recenter về vị trí hiện tại ─────────────────────────────
+  const recenter = () => {
+    if (!location || !mapRef.current) return;
+    mapRef.current.animateToRegion({
+      latitude:       location.latitude,
+      longitude:      location.longitude,
+      latitudeDelta:  0.01,
+      longitudeDelta: 0.01,
+    }, 600);
   };
 
-  // ── Filter markers ────────────────────────────────
-  const filteredMarkers = markers.filter(m =>
-    filter === 'all' ? true : m.type === filter
-  );
-
-  // ── Search suggestions ────────────────────────────
-  const handleSearch = (text) => {
-    setSearch(text);
-    if (!text.trim()) { setSuggestions([]); return; }
-    setSuggestions(
-      markers
-        .filter(m =>
-          m.title?.toLowerCase().includes(text.toLowerCase()) ||
-          m.address?.toLowerCase().includes(text.toLowerCase())
-        )
-        .slice(0, 5)
-    );
-  };
-
-  const flyToMarker = (item) => {
-    setSearch(item.title);
-    setSuggestions([]);
-    webRef.current?.postMessage(
-      JSON.stringify({ type: 'FLY_TO', lat: item.lat, lng: item.lng, zoom: 17 })
-    );
-  };
-
-  // ── Message từ WebView ────────────────────────────
-  const handleMessage = (e) => {
-    try {
-      const data = JSON.parse(e.nativeEvent.data);
-      if (data.type === 'OPEN_DETAIL') {
-        const col = data.item.type === 'event' ? 'events' : 'places';
-        navigation.navigate('Detail', { item: data.item, collection: col });
-      }
-    } catch {}
-  };
-
-  // ── Loading state ─────────────────────────────────
-  if (!mapReady) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color={TEAL} />
-        <Text style={styles.loadingText}>Đang tải dữ liệu...</Text>
-      </View>
-    );
-  }
+  // ── Region mặc định (TP.HCM nếu chưa có GPS) ────────────────
+  const initialRegion = location
+    ? { latitude: location.latitude,  longitude: location.longitude,  latitudeDelta: 0.05, longitudeDelta: 0.05 }
+    : { latitude: 10.7769,            longitude: 106.7009,            latitudeDelta: 0.12, longitudeDelta: 0.12 };
 
   return (
     <View style={styles.container}>
 
-      {/* WebView loading overlay */}
-      {webLoading && (
-        <View style={styles.mapLoadingOverlay}>
-          <ActivityIndicator size="large" color={TEAL} />
+      {/* ── Bản đồ ── */}
+      <MapView
+        ref={mapRef}
+        style={StyleSheet.absoluteFillObject}
+        provider={PROVIDER_GOOGLE}
+        initialRegion={initialRegion}
+        showsUserLocation
+        showsMyLocationButton={false}
+        onPress={hideCard}
+      >
+        {items.map(item => (
+          <Marker
+            key={`${item.type}-${item.id}`}
+            coordinate={{ latitude: item.lat, longitude: item.lng }}
+            pinColor={MARKER_COLOR[item.type] || TEAL}
+            title={item.title}
+            description={item.address}
+            onPress={(e) => { e.stopPropagation?.(); showCard(item); }}
+          />
+        ))}
+      </MapView>
+
+      {/* ── Loading overlay ── */}
+      {loading && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator color={TEAL} size="large" />
           <Text style={styles.loadingText}>Đang tải bản đồ...</Text>
         </View>
       )}
 
-      {/* WebView hoặc màn hình lỗi */}
-      {webError ? (
-        <View style={styles.center}>
-          <Text style={{ fontSize: 48 }}>🗺️</Text>
-          <Text style={styles.errorTitle}>Không thể tải bản đồ</Text>
-          <Text style={styles.errorSub}>Kiểm tra kết nối mạng và thử lại</Text>
-          <TouchableOpacity
-            style={styles.retryBtn}
-            onPress={() => {
-              setWebError(false);
-              setWebLoading(true);
-              webRef.current?.reload();
-            }}
-          >
-            <Text style={styles.retryText}>Thử lại</Text>
-          </TouchableOpacity>
+      {/* ── Lỗi GPS ── */}
+      {locError && (
+        <View style={styles.locErrorBanner}>
+          <Text style={styles.locErrorText}>⚠️ Không có quyền truy cập vị trí</Text>
         </View>
-      ) : (
-        <WebView
-          ref={webRef}
-          style={styles.map}
-          source={{ html: buildMapHtml(filteredMarkers) }}
-          onLoadEnd={() => setWebLoading(false)}
-          onError={() => { setWebLoading(false); setWebError(true); }}
-          onMessage={handleMessage}
-          javaScriptEnabled
-          geolocationEnabled={false}
-          allowFileAccessFromFileURLs={true}
-          allowUniversalAccessFromFileURLs={true}
-          originWhitelist={['*']}
-          mixedContentMode="always"
-        />
       )}
 
-      {/* Thanh tìm kiếm overlay */}
-      <View style={styles.searchWrapper}>
-        <View style={styles.searchBar}>
-          <Text style={styles.searchIcon}>🔍</Text>
-          <TextInput
-            style={styles.searchInput}
-            value={search}
-            onChangeText={handleSearch}
-            placeholder="Tìm trên bản đồ..."
-            placeholderTextColor="#9CA3AF"
-          />
-          {search.length > 0 && (
-            <TouchableOpacity onPress={() => { setSearch(''); setSuggestions([]); }}>
-              <Text style={styles.clearBtn}>✕</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {suggestions.length > 0 && (
-          <View style={styles.suggestList}>
-            {suggestions.map(item => (
-              <TouchableOpacity
-                key={item.id}
-                style={styles.suggestItem}
-                onPress={() => flyToMarker(item)}
-              >
-                <Text style={styles.suggestIcon}>
-                  {item.type === 'event' ? '🎉' : '📍'}
-                </Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.suggestTitle} numberOfLines={1}>
-                    {item.title}
-                  </Text>
-                  <Text style={styles.suggestAddr} numberOfLines={1}>
-                    {item.address}
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
-      </View>
-
-      {/* Filter chips */}
-      <View style={styles.filterRow}>
-        {[
-          { key: 'all',   label: '🌐 Tất cả' },
-          { key: 'place', label: '📍 Địa điểm' },
-          { key: 'event', label: '🎉 Sự kiện' },
-        ].map(f => (
-          <TouchableOpacity
-            key={f.key}
-            style={[styles.filterChip, filter === f.key && styles.filterChipActive]}
-            onPress={() => setFilter(f.key)}
-          >
-            <Text style={[styles.filterText, filter === f.key && styles.filterTextActive]}>
-              {f.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-        <Text style={styles.markerCount}>{filteredMarkers.length}</Text>
-      </View>
-
-      {/* Nút định vị */}
-      <TouchableOpacity
-        style={styles.locateBtn}
-        onPress={handleLocate}
-        disabled={locating}
-      >
-        {locating
-          ? <ActivityIndicator color="#fff" size="small" />
-          : <Text style={styles.locateIcon}>📍</Text>
-        }
-      </TouchableOpacity>
-
-      {/* Chú thích */}
+      {/* ── Legend ── */}
       <View style={styles.legend}>
         <View style={styles.legendItem}>
           <View style={[styles.legendDot, { backgroundColor: TEAL }]} />
-          <Text style={styles.legendText}>
-            Địa điểm ({markers.filter(m => m.type === 'place').length})
-          </Text>
+          <Text style={styles.legendLabel}>Địa điểm</Text>
         </View>
         <View style={styles.legendItem}>
-          <View style={[styles.legendDot, { backgroundColor: GOLD }]} />
-          <Text style={styles.legendText}>
-            Sự kiện ({markers.filter(m => m.type === 'event').length})
-          </Text>
+          <View style={[styles.legendDot, { backgroundColor: '#F59E0B' }]} />
+          <Text style={styles.legendLabel}>Sự kiện</Text>
         </View>
       </View>
+
+      {/* ── Nút Recenter ── */}
+      <TouchableOpacity style={styles.recenterBtn} onPress={recenter} activeOpacity={0.85}>
+        <Text style={styles.recenterIcon}>◎</Text>
+      </TouchableOpacity>
+
+      {/* ── Bottom Info Card ── */}
+      <InfoCard
+        item={selected}
+        slideAnim={slideAnim}
+        onClose={hideCard}
+        onDetail={() => {
+          hideCard();
+          navigation.navigate('Detail', {
+            item:       selected,
+            collection: selected?.type === 'event' ? 'events' : 'places',
+          });
+        }}
+      />
 
     </View>
   );
 }
 
+// ── Styles ────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F0FDF9' },
-  map:       { flex: 1 },
+  container: { flex: 1 },
 
-  center: {
-    flex: 1, justifyContent: 'center', alignItems: 'center',
-    backgroundColor: '#F0FDF9', gap: 8,
-  },
-  loadingText: { marginTop: 10, fontSize: 14, color: '#6B7280' },
-  errorTitle:  { fontSize: 17, fontWeight: '700', color: '#111827' },
-  errorSub: {
-    fontSize: 13, color: '#9CA3AF',
-    textAlign: 'center', paddingHorizontal: 32,
-  },
-  retryBtn: {
-    marginTop: 12, backgroundColor: TEAL,
-    paddingHorizontal: 28, paddingVertical: 12, borderRadius: 12,
-  },
-  retryText: { color: '#fff', fontWeight: '700', fontSize: 14 },
-
-  mapLoadingOverlay: {
+  loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center', alignItems: 'center',
-    backgroundColor: '#F0FDF9', zIndex: 5,
+    backgroundColor: '#F0FDF9CC',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
   },
+  loadingText: { color: TEAL2, fontWeight: '600', fontSize: 14 },
 
-  // Search overlay
-  searchWrapper: {
-    position: 'absolute', top: 12, left: 12, right: 12, zIndex: 10,
+  locErrorBanner: {
+    position: 'absolute', top: 16, alignSelf: 'center',
+    backgroundColor: '#FEF3C7', borderRadius: 10,
+    paddingHorizontal: 16, paddingVertical: 8,
+    shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 6, elevation: 4,
   },
-  searchBar: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#fff', borderRadius: 14,
-    borderWidth: 1.5, borderColor: '#D1FAE5',
-    paddingHorizontal: 14, paddingVertical: 10,
-    shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 8, elevation: 4,
-  },
-  searchIcon:  { fontSize: 16, marginRight: 8 },
-  searchInput: { flex: 1, fontSize: 15, color: '#111827' },
-  clearBtn:    { fontSize: 14, color: '#9CA3AF', paddingLeft: 8 },
+  locErrorText: { color: '#D97706', fontWeight: '600', fontSize: 13 },
 
-  suggestList: {
-    backgroundColor: '#fff', borderRadius: 12, marginTop: 4,
-    shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 10, elevation: 6,
-    overflow: 'hidden',
-  },
-  suggestItem: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingHorizontal: 14, paddingVertical: 11,
-    borderBottomWidth: 1, borderBottomColor: '#F3F4F6',
-  },
-  suggestIcon:  { fontSize: 18 },
-  suggestTitle: { fontSize: 14, fontWeight: '600', color: '#111827' },
-  suggestAddr:  { fontSize: 11, color: '#9CA3AF', marginTop: 1 },
-
-  // Filter chips
-  filterRow: {
-    position: 'absolute', top: 76, left: 12, right: 12, zIndex: 10,
-    flexDirection: 'row', gap: 8, alignItems: 'center',
-  },
-  filterChip: {
-    paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20,
-    backgroundColor: '#fff', borderWidth: 1.5, borderColor: '#E5E7EB',
-    shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
-  },
-  filterChipActive: { borderColor: TEAL, backgroundColor: '#F0FDF9' },
-  filterText:       { fontSize: 12, fontWeight: '600', color: '#6B7280' },
-  filterTextActive: { color: TEAL },
-  markerCount: {
-    marginLeft: 'auto', fontSize: 13, fontWeight: '800', color: TEAL,
-    backgroundColor: '#F0FDF9', paddingHorizontal: 10, paddingVertical: 6,
-    borderRadius: 12, borderWidth: 1.5, borderColor: '#D1FAE5',
-  },
-
-  // Nút định vị
-  locateBtn: {
-    position: 'absolute', bottom: 100, right: 16, zIndex: 10,
-    width: 52, height: 52, borderRadius: 26,
-    backgroundColor: TEAL,
-    justifyContent: 'center', alignItems: 'center',
-    shadowColor: TEAL, shadowOpacity: 0.45, shadowRadius: 10, elevation: 8,
-  },
-  locateIcon: { fontSize: 22 },
-
-  // Chú thích
   legend: {
-    position: 'absolute', bottom: 16, left: 16, zIndex: 10,
-    backgroundColor: 'rgba(255,255,255,0.93)',
-    borderRadius: 12, padding: 10,
-    flexDirection: 'row', gap: 14,
+    position: 'absolute', top: 16, left: 16,
+    backgroundColor: '#ffffffDD', borderRadius: 12,
+    padding: 10, gap: 6,
     shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 6, elevation: 3,
   },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  legendDot:  { width: 12, height: 12, borderRadius: 6 },
-  legendText: { fontSize: 12, fontWeight: '600', color: '#374151' },
+  legendDot:  { width: 10, height: 10, borderRadius: 5 },
+  legendLabel:{ fontSize: 12, fontWeight: '600', color: '#374151' },
+
+  recenterBtn: {
+    position: 'absolute', top: 16, right: 16,
+    width: 46, height: 46, borderRadius: 23,
+    backgroundColor: '#fff',
+    justifyContent: 'center', alignItems: 'center',
+    shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 8, elevation: 5,
+  },
+  recenterIcon: { fontSize: 22, color: TEAL },
+
+  // ── Card ──
+  card: {
+    position: 'absolute',
+    bottom: 0, left: 0, right: 0,
+    height: CARD_H,
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    padding: 16,
+    shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 16, elevation: 10,
+  },
+  handle: {
+    width: 40, height: 4, borderRadius: 2,
+    backgroundColor: '#E5E7EB',
+    alignSelf: 'center', marginBottom: 10,
+  },
+  typeBadge: {
+    alignSelf: 'flex-start', borderRadius: 8,
+    paddingHorizontal: 8, paddingVertical: 3, marginBottom: 6,
+  },
+  typeBadgeText: { fontSize: 11, fontWeight: '700' },
+
+  cardTitle: { fontSize: 16, fontWeight: '800', color: '#111827', marginBottom: 2 },
+  cardAddr:  { fontSize: 12, color: '#6B7280', marginBottom: 6 },
+
+  ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 2, marginBottom: 10 },
+  ratingText:{ fontSize: 11, color: '#6B7280', marginLeft: 4 },
+
+  btnRow:       { flexDirection: 'row', gap: 10 },
+  btnDetail: {
+    flex: 1, backgroundColor: TEAL, borderRadius: 12,
+    paddingVertical: 10, alignItems: 'center',
+  },
+  btnDetailText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  btnDir: {
+    flex: 1, borderWidth: 1.5, borderColor: TEAL, borderRadius: 12,
+    paddingVertical: 10, alignItems: 'center',
+  },
+  btnDirText: { color: TEAL, fontWeight: '700', fontSize: 14 },
+
+  closeBtn: {
+    position: 'absolute', top: 14, right: 16,
+    width: 28, height: 28, borderRadius: 14,
+    backgroundColor: '#F3F4F6',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  closeTxt: { color: '#6B7280', fontSize: 13, fontWeight: '700' },
 });
