@@ -163,7 +163,7 @@ const MainTabs = () => (
     }}
   >
     <Tab.Screen name="Home" component={HomeStack}
-      options={{ tabBarIcon: ({ focused }) => <TabIcon label="Bản đồ" focused={focused} /> }} />
+      options={{ tabBarIcon: ({ focused }) => <TabIcon emoji="🗺️" label="Bản đồ" focused={focused} /> }} />
 
     <Tab.Screen name="Explore" component={ExploreStack}
       options={{ tabBarIcon: ({ focused }) => <TabIcon emoji="🔍" label="Khám phá" focused={focused} /> }} />
